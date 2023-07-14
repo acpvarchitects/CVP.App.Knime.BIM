@@ -1,5 +1,7 @@
 # Python Extension Tutorials
 
+! in case CONDA doesn't work C:\ProgramData\miniconda3\Library\bin\conda.bat init cmd.exe
+
 A collection of tutorials to develop Python extensions.
 
 https://docs.knime.com/latest/pure_python_node_extensions_guide/#extension-bundling
