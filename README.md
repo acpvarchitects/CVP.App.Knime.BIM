@@ -2,6 +2,8 @@
 
 A collection of tutorials to develop Python extensions.
 
+https://docs.knime.com/latest/pure_python_node_extensions_guide/#extension-bundling
+
 ## Contents
 - [Python Extension Tutorials](#python-extension-tutorials)
   - [Contents](#contents)
