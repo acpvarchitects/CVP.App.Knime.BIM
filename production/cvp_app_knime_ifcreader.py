@@ -16,7 +16,7 @@ main_category = knext.category(
     level_id="bim",
     name="BIM",
     description="Nodes for Building Information Modelling",
-    icon="bim.png",
+    icon="icons/bim.png",
 )
 
 ifc_category = knext.category(
@@ -24,10 +24,10 @@ ifc_category = knext.category(
     level_id="ifc",
     name="IFC",
     description="Nodes for IFC Manipulation",
-    icon="ifc.png",
+    icon="icons/ifc.png",
 )
 
-@knext.node(name="IFC Reader", node_type=knext.NodeType.SOURCE, icon_path="ifc.png", category=ifc_category)
+@knext.node(name="IFC Reader", node_type=knext.NodeType.SOURCE, icon_path="icons/ifc.png", category=ifc_category)
 @knext.input_table(name="Model List", description="List of IFC Models")
 @knext.output_table(name="Output Data", description="Whatever the node has produced")
 

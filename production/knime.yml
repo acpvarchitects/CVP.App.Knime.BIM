@@ -1,7 +1,7 @@
 name: ifcreader # Will be concatenated with the group_id to an ID
 author: emilianocapasso
 env_yml_path: environment.yml # This is necessary for bundling, but not needed during development
-extension_module: cvp.app.knime.ifcreader # The .py Python module containing the nodes of your extension
+extension_module: cvp_app_knime_ifcreader # The .py Python module containing the nodes of your extension
 description: IFC Reader to CSV # Human readable bundle name / description
 long_description: This extension reads the IFC and output a dataframe
 group_id: cvp.app.knime
