@@ -1,4 +1,4 @@
-name: ifcreader
+name: bim_environment
 channels:
   - knime
   - conda-forge
