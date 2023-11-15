@@ -20,6 +20,15 @@ As of now, the only way to install this package is:
  ![image](https://github.com/acpvarchitects/CVP.App.Knime.BIM/assets/26569178/7a502a45-2fd3-4bff-80b1-6d7e8dca3264)
 4. File > Install KNIME Extensions and you should see "Building Information Modelling Extension for KNIME (IFC) 
    ![image](https://github.com/acpvarchitects/CVP.App.Knime.BIM/assets/26569178/f7affae4-5a6a-4687-a0a3-822bc522c53f)
+   
+5. Select and click next
+   
+ ![image](https://github.com/acpvarchitects/CVP.App.Knime.BIM/assets/26569178/05c9a46d-e1c8-4b04-82b1-4d6d29a7828a)
+ 
+6. Trust the unsigned content
 
+ ![image](https://github.com/acpvarchitects/CVP.App.Knime.BIM/assets/26569178/e3c37f66-da80-4341-a3f4-f4296c94605f)
+ 
+7. Once the installation is complete, you should find the Nodes here
 
-
+![image](https://github.com/acpvarchitects/CVP.App.Knime.BIM/assets/26569178/383d618c-9230-4276-9895-e1b2f63e5777)
