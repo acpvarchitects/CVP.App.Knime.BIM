@@ -11,6 +11,8 @@ It's a initial work in progress repository which will be integrated with other n
 
 ## Installation
 
+This version requires KNIME Analytics Platform version 5.1.1 or later.
+
 As of now, the only way to install this package is downloading the zip in the Latest Release and install via "File -> Preferences -> Install/Updates -> Available Software Sites" and add the location of the unzipped folder into local Software Site
 
 
