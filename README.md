@@ -13,7 +13,9 @@ It's a initial work in progress repository which will be integrated with other n
 
 This version requires KNIME Analytics Platform version 5.1.1 or later.
 
-As of now, the only way to install this package is: 
+(new!) From the KNIME Hub: https://hub.knime.com/emilianocapasso/extensions/cvp.app.knime.features.bim/latest
+
+From this repository:
 1. downloading the zip in the Latest [Release](https://github.com/acpvarchitects/CVP.App.Knime.BIM/releases/tag/1.0.0)
 2. unzip the file into a folder
 3. go to File > Preferences > Install/Updates > Available Software Sites" and add the location of the unzipped folder into local Software Site
