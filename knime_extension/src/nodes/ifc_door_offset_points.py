@@ -5,15 +5,16 @@ import pandas as pd
 import numpy as np
 from .categories import category
 
+# Node development reference links:
 # https://www.knime.com/blog/4-steps-for-your-python-team-to-develop-knime-nodes
 # https://www.knime.com/blog/python-script-node-bundled-packages
 # https://docs.knime.com/latest/pure_python_node_extensions_guide/index.html#_defining_custom_port_objects
 
 
-# IFC Door Offset Points
+# IFC Door Offset Points Node
 
 @knext.node(
-    name="IFC Extract Door Offset Points",
+    name="IFC Door Offset XYZ",
     node_type=knext.NodeType.SOURCE,
     icon_path="icons/ifc.png",
     category=category,
@@ -21,6 +22,8 @@ from .categories import category
 )
 @knext.input_table(name="IFC Path Table", description="Table containing IFC model paths")
 @knext.output_table(name="Door Offset Points", description="Offset points for IfcDoor elements")
+
+
 class IFCDoorOffsetPointsExtractor:
     path_column = knext.ColumnParameter(
         "IFC Path Column",

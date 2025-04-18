@@ -3,7 +3,6 @@ import ifcopenshell
 from ifcopenshell.util import element, classification, placement
 import ifcopenshell.geom
 import ifcopenshell.util.shape
-import multiprocessing
 import pandas as pd
 import numpy as np
 import os
@@ -15,29 +14,29 @@ from OCC.Core.Bnd import Bnd_Box
 from OCC.Core.gp import gp_Pnt
 from OCC.Core.BRepBndLib import brepbndlib
 
-
-
+# Node development reference links:
 # https://www.knime.com/blog/4-steps-for-your-python-team-to-develop-knime-nodes
 # https://www.knime.com/blog/python-script-node-bundled-packages
 # https://docs.knime.com/latest/pure_python_node_extensions_guide/index.html#_defining_custom_port_objects
 
-# Extract Room Volume Points
 
 @knext.node(
-    name="IFC Extract Room Volume Points",
+    name="IFC Room Points",
     node_type=knext.NodeType.SOURCE,
     icon_path="icons/ifc.png",
     category=category,
     after="",
-    )
+)
 @knext.input_table(name="Rooms IFC File", description="Table containing paths to the IFC file with rooms")
 @knext.output_table(name="Room Points Table", description="Points inside room volumes with metadata")
+
 
 class ExtractRoomVolumePoints:
     """
     Extracts interior points within each room in an IFC file using OpenCascade geometry,
     returning a 3D point cloud with room metadata.
     """
+
     path_column = knext.ColumnParameter(
         "IFC Path Column",
         "Column containing the path to the IFC file",
@@ -45,9 +44,15 @@ class ExtractRoomVolumePoints:
     )
 
     spacing = knext.DoubleParameter(
-        "Grid Spacing [m]",
+        "Grid Spacing [mm]",
         "Spacing between points in the X/Y/Z grid",
-        default_value=0.3,
+        default_value=300,
+    )
+
+    min_offset_mm = knext.IntParameter(
+        "Minimum Offset from Boundary [mm]",
+        "Minimum distance from room surfaces to keep points (buffer zone)",
+        default_value=100,
     )
 
     def get_storey_elevation(self, space, ifc_file):
@@ -59,7 +64,7 @@ class ExtractRoomVolumePoints:
                     return elevation, getattr(storey, 'Name', 'Unknown')
         return 0.0, "Unknown"
 
-    def get_shape_geometry(self, space, spacing):
+    def get_shape_geometry(self, space, spacing, min_offset):
         settings = ifcopenshell.geom.settings()
         settings.set("USE_WORLD_COORDS", True)
         settings.set("USE_PYTHON_OPENCASCADE", True)
@@ -93,10 +98,20 @@ class ExtractRoomVolumePoints:
                         if classifier.State() == TopAbs_IN:
                             extracted_points.append((x, y, z))
 
-            return extracted_points
+            # Buffer zone
+            offset_m = min_offset / 1000.0
+            filtered_points = [
+                (x, y, z) for x, y, z in extracted_points
+                if (x > xmin + offset_m and x < xmax - offset_m and
+                    y > ymin + offset_m and y < ymax - offset_m and
+                    z > zmin + offset_m and z < zmax - offset_m)
+            ]
+
+            return filtered_points
+
         except Exception as e:
             return []
-    
+
     def configure(self, configure_context, input_schema_1):
         return None
 
@@ -121,11 +136,12 @@ class ExtractRoomVolumePoints:
                 elevation, level_name = self.get_storey_elevation(space, ifc_file)
                 long_name = getattr(space, "LongName", "Unknown")
 
-                points = self.get_shape_geometry(space, self.spacing)
+                spacing_m = self.spacing / 1000.0
+                points = self.get_shape_geometry(space,spacing_m, self.min_offset_mm)
 
                 for x, y, z in points:
                     data.append([x * 1000, y * 1000, z * 1000, space.GlobalId, level_name, long_name])
-            except Exception as e:
+            except Exception:
                 continue
 
         result_df = pd.DataFrame(data, columns=["X", "Y", "Z", "GlobalID", "Level", "LongName"])

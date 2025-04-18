@@ -7,14 +7,15 @@ import multiprocessing
 import pandas as pd
 from .categories import category
 
+# Node development reference links:
 # https://www.knime.com/blog/4-steps-for-your-python-team-to-develop-knime-nodes
 # https://www.knime.com/blog/python-script-node-bundled-packages
 # https://docs.knime.com/latest/pure_python_node_extensions_guide/index.html#_defining_custom_port_objects
 
-#IFC Extract Element Centroids
+#IFC Extract Element Centroids Node
 
 @knext.node(
-    name="IFC Extract Element Centroids",
+    name="IFC Element Centroids",
     node_type=knext.NodeType.SOURCE,
     icon_path="icons/ifc.png",
     category=category,
