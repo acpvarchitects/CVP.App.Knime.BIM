@@ -9,6 +9,20 @@ This extension has been developed by the ACPV ARCHITECTS in-house unit ACPVX. Th
 
 It's a initial work in progress repository which will be integrated with other nodes are they are developed
 
+## What's New in Version 2.0.0
+
+This new version includes several major improvements:
+
+- Refactored Python nodes into separate modules for better organization
+- Extended IFCReader functionality to support IFC4 schema
+- Added new custom KNIME nodes for IFC processing:
+  - IFC Reader: Reads IFC2x3 and IFC4 files, extracting elements with properties
+  - IFC Building Info: Extracts information about the IfcBuilding entity
+  - IFC Element Centroids: Computes 3D bounding box centroids for IFC elements
+  - IFC Door Offset XYZ: Generates offset points for door elements
+  - IFC Room Points: Creates interior points within room volumes
+  - IFC Intersection: Performs geometric intersection operations
+
 ## Installation
 
 This version requires KNIME Analytics Platform version 5.1.1 or later.
