@@ -28,8 +28,7 @@ from .categories import category
 class IFCCentroidExtractor:
     """
     This node reads an IFC file and computes the 3D bounding box centroid for each element.
-    The output table contains coordinates (in millimeters), the element GlobalId, the building storey name,
-    and the custom property 'CVP_Tag Code' from the PSet 'CVP_Code' if available.
+    The output table contains coordinates (in millimeters), the element GlobalId, the building storey name
     """
 
     path_column = knext.ColumnParameter(
@@ -86,18 +85,10 @@ class IFCCentroidExtractor:
             global_id = element.GlobalId if element else "N/A"
             level = self.get_storey_name(element, model) if element else "Unknown"
 
-            id_item = "N/A"
-            try:
-                psets = ifcopenshell.util.element.get_psets(element)
-                cvp = psets.get("CVP_Code", {})
-                id_item = cvp.get("CVP_Tag Code", "N/A")
-            except Exception as e:
-                print(f"[WARN] Failed to retrieve CVP_Tag Code for {global_id}: {e}")
-
             try:
                 centroid = ifcopenshell.util.shape.get_bbox_centroid(shape.geometry)
                 centroid_mm = [coord * 1000 for coord in centroid]
-                data.append([*centroid_mm, global_id, level, id_item])
+                data.append([*centroid_mm, global_id, level])
                 print(f"[OK] Found centroid for: {global_id}")
                 processed += 1
             except Exception as e:
@@ -112,5 +103,5 @@ class IFCCentroidExtractor:
         print(f"         Failed : {failed}")
         print(f"         Total   : {processed + failed}")
 
-        result_df = pd.DataFrame(data, columns=["X", "Y", "Z", "GlobalID", "Level", "ID_Item"])
+        result_df = pd.DataFrame(data, columns=["X", "Y", "Z", "GlobalID", "Level"])
         return knext.Table.from_pandas(result_df)
