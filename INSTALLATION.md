@@ -6,6 +6,10 @@ conda activate knime-ext-bundling
 
 build_python_extension.py Knime/ifcbuildingread Knime/cvp/ifcbuildingread
 
+for debug
+
+-Dknime.python.extension.config=C:\Users\e.capasso\Documents\Repositories\CVP.App.Knime.IFCReader\config.yml
+
 # Python Extension Tutorials
 
 

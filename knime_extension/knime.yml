@@ -1,10 +1,10 @@
 group_id: cvp.app.knime
 name: bim # Will be concatenated with the group_id to an ID
-author: Emiliano Capasso, Cristiano Piagnerelli
+author: Emiliano Capasso, Cristiano Piagnerelli, Valentina Palazzolo
 env_yml_path: ifc_environment.yml # This is necessary for bundling, but not needed during development
 extension_module: src/cvp_app_knime_bim # The .py Python module containing the nodes of your extension
 description: Building Information Modelling Extension for KNIME (IFC) # Human readable bundle name / description
 long_description: KNIME nodes for reading and processing BIM Models (IFC)
-version: 1.0.0 # Version of this Python node extension
+version: 2.0.0 # Version of this Python node extension
 vendor: ACPV ARCHITECTS S.R.L.
 license_file: LICENSE.TXT # Best practice: put your LICENSE.TXT next to the knime.yml; otherwise you would need to change to path/to/LICENSE.txt
