@@ -26,11 +26,18 @@ from OCC.Core.BRepBndLib import brepbndlib
 class ExtractRoomVolumePoints:
     """
     Extracts interior points within each IfcSpace volume using OpenCascade geometry.
-    Coordinates are always output in millimeters regardless of IFC model units.
+    Output coordinates are always in millimeters.
 
-    The buffer zone (minimum offset from room surfaces) is enforced geometrically
-    via the OCC solid classifier tolerance, not via bounding-box shrinkage, so it
-    works correctly for rotated or non-rectangular rooms.
+    UNIT CONVENTION (important):
+    ifcopenshell.geom.create_shape with USE_PYTHON_OPENCASCADE=True always returns
+    OCC geometry in SI meters, regardless of the IFC project unit (mm, m, etc.).
+    All OCC operations (bbox, classifier, grid) are therefore done in meters.
+    The local placement matrix from get_local_placement is in IFC project units and
+    must be scaled to meters before being used with OCC coordinates.
+
+    The grid and buffer are generated in the room's LOCAL coordinate system
+    (via the element placement matrix) so that the buffer is aligned with room
+    walls and is correct even for rotated rooms.
     """
 
     path_column = knext.ColumnParameter(
@@ -47,16 +54,12 @@ class ExtractRoomVolumePoints:
 
     min_offset_mm = knext.IntParameter(
         "Minimum Offset from Boundary [mm]",
-        "Points closer than this distance to any room surface are discarded. "
-        "Enforced via OCC classifier tolerance — geometrically correct for any room shape.",
+        "Points closer than this distance to any room wall (in local room coordinates) are discarded.",
         default_value=100,
     )
 
     def _get_storey(self, space):
-        """
-        Returns (storey_name, elevation_raw_model_units, storey_global_id).
-        Checks Decomposes (IFC4 pattern) then ContainedInStructure (IFC2x3 pattern).
-        """
+        """Returns (storey_name, elevation_raw_model_units, storey_global_id)."""
         for rel in getattr(space, "Decomposes", []):
             s = rel.RelatingObject
             if s.is_a("IfcBuildingStorey"):
@@ -69,58 +72,82 @@ class ExtractRoomVolumePoints:
                 return getattr(s, "Name", None), (float(elev) if elev is not None else None), s.GlobalId
         return None, None, None
 
-    def _get_interior_points(self, space, spacing_mm, min_offset_mm, scale_to_mm):
+    def _get_interior_points(self, space, spacing_mm, min_offset_mm):
         """
-        Generates a 3D grid inside the space BRep and returns points that are
-        at least min_offset_mm from any room surface.
+        Returns a list of (x_mm, y_mm, z_mm) interior points for the given IfcSpace.
 
-        All internal geometry is in model units; output coordinates are in mm.
-        The buffer is enforced by the OCC classifier tolerance, not by AABB shrinkage,
-        so it is correct for rotated and non-rectangular rooms.
+        Works entirely in OCC world coordinates. Emits diagnostic lines for the first
+        space to help verify OCC unit scale and classifier behaviour.
         """
         settings = ifcopenshell.geom.settings()
         settings.set("USE_WORLD_COORDS", True)
         settings.set("USE_PYTHON_OPENCASCADE", True)
 
-        # Convert mm parameters to model units
-        spacing_model = spacing_mm / scale_to_mm
-        min_offset_model = min_offset_mm / scale_to_mm
+        # OCC geometry is in SI meters; convert user parameters accordingly.
+        spacing_m  = spacing_mm  / 1000.0
+        min_offset_m = min_offset_mm / 1000.0
+
+        gid = getattr(space, "GlobalId", "?")
 
         try:
-            shape = ifcopenshell.geom.create_shape(settings, space)
-            brep_shape = shape.geometry
+            shape     = ifcopenshell.geom.create_shape(settings, space)
+            brep      = shape.geometry
 
             bbox = Bnd_Box()
-            brepbndlib.Add(brep_shape, bbox)
-            xmin, ymin, zmin, xmax, ymax, zmax = bbox.Get()
+            brepbndlib.Add(brep, bbox)
+            x0, y0, z0, x1, y1, z1 = bbox.Get()
 
-            classifier = BRepClass3d_SolidClassifier(brep_shape)
+            dx, dy, dz = x1 - x0, y1 - y0, z1 - z0
 
-            x_coords = np.arange(xmin, xmax, spacing_model)
-            y_coords = np.arange(ymin, ymax, spacing_model)
-            z_coords = np.arange(zmin + spacing_model, zmax, spacing_model)
+            # Diagnostic: printed only for the very first space per execute() call.
+            # Tells us OCC scale (expect metres → dx ~3-30 for typical rooms) and
+            # whether the classifier sees the bbox centre as inside the solid.
+            if getattr(self, "_diag_done", False) is False:
+                self._diag_done = True
+                cx, cy, cz = (x0+x1)/2, (y0+y1)/2, (z0+z1)/2
+                _cls = BRepClass3d_SolidClassifier(brep)
+                _cls.Perform(gp_Pnt(cx, cy, cz), 1e-6)
+                from OCC.Core.TopAbs import TopAbs_IN as _IN, TopAbs_OUT as _OUT, TopAbs_ON as _ON
+                state_name = {_IN: "IN", _OUT: "OUT", _ON: "ON"}.get(_cls.State(), str(_cls.State()))
+                print(f"[DIAG] First space {gid}: bbox dx={dx:.4f} dy={dy:.4f} dz={dz:.4f} "
+                      f"(expected ~metres for typical rooms)")
+                print(f"[DIAG] Classifier at bbox centre ({cx:.3f},{cy:.3f},{cz:.3f}): {state_name}")
 
-            # Small z offset for the XY pre-check — well inside the room, near the floor
-            floor_z = zmin + spacing_model * 0.1
+            # Check room fits the requested buffer
+            if dx < 2*min_offset_m or dy < 2*min_offset_m or dz < 2*min_offset_m:
+                print(f"[WARN] Room too small for buffer {min_offset_mm}mm "
+                      f"(bbox {dx*1000:.0f}x{dy*1000:.0f}x{dz*1000:.0f}mm): {gid}")
+                return []
+
+            # Grid in world coordinates with buffer applied to AABB
+            xs = np.arange(x0 + min_offset_m, x1 - min_offset_m, spacing_m)
+            ys = np.arange(y0 + min_offset_m, y1 - min_offset_m, spacing_m)
+            zs = np.arange(z0 + min_offset_m, z1 - min_offset_m, spacing_m)
+
+            if len(xs) == 0 or len(ys) == 0 or len(zs) == 0:
+                return []
+
+            # Floor pre-check z: just above the OCC bbox floor
+            z_floor = z0 + spacing_m * 0.1
+
+            classifier = BRepClass3d_SolidClassifier(brep)
 
             points = []
-            for x in x_coords:
-                for y in y_coords:
-                    # Pre-check: skip XY columns outside the room footprint (fast path)
-                    classifier.Perform(gp_Pnt(x, y, floor_z), 1e-9)
+            for x in xs:
+                for y in ys:
+                    classifier.Perform(gp_Pnt(x, y, z_floor), 1e-6)
                     if classifier.State() != TopAbs_IN:
                         continue
-                    for z in z_coords:
-                        # Geometric buffer enforced via classifier tolerance:
-                        # TopAbs_IN only if point is > min_offset_model from any surface
-                        classifier.Perform(gp_Pnt(x, y, z), min_offset_model)
+                    for z in zs:
+                        classifier.Perform(gp_Pnt(x, y, z), 1e-6)
                         if classifier.State() == TopAbs_IN:
-                            points.append((x * scale_to_mm, y * scale_to_mm, z * scale_to_mm))
+                            # OCC coords are in metres → output in mm
+                            points.append((x * 1000.0, y * 1000.0, z * 1000.0))
 
             return points
 
         except Exception as e:
-            print(f"[WARN] Could not process space {getattr(space, 'GlobalId', '?')}: {e}")
+            print(f"[WARN] Could not process space {gid}: {e}")
             return []
 
     def configure(self, configure_context, input_schema_1):
@@ -139,8 +166,7 @@ class ExtractRoomVolumePoints:
 
         ifc_file = ifcopenshell.open(ifc_path)
 
-        scale_to_m = ifcopenshell.util.unit.calculate_unit_scale(ifc_file)
-        scale_to_mm = scale_to_m * 1000.0
+        scale_to_mm = ifcopenshell.util.unit.calculate_unit_scale(ifc_file) * 1000.0
         print(f"[INFO] IFC unit scale -> mm: {scale_to_mm}")
 
         spaces = ifc_file.by_type("IfcSpace")
@@ -151,11 +177,18 @@ class ExtractRoomVolumePoints:
         for space in spaces:
             try:
                 storey_name, storey_elev_raw, storey_gid = self._get_storey(space)
-                storey_elev_mm = storey_elev_raw * scale_to_mm if storey_elev_raw is not None else None
+                storey_elev_mm = (
+                    storey_elev_raw * scale_to_mm if storey_elev_raw is not None else None
+                )
                 long_name = getattr(space, "LongName", None)
 
-                points = self._get_interior_points(space, self.spacing, self.min_offset_mm, scale_to_mm)
-                print(f"[INFO] Space {getattr(space, 'GlobalId', '?')} ({long_name}): {len(points)} points")
+                points = self._get_interior_points(
+                    space, self.spacing, self.min_offset_mm
+                )
+                print(
+                    f"[INFO] Space {getattr(space, 'GlobalId', '?')} ({long_name}): "
+                    f"{len(points)} points"
+                )
 
                 for x_mm, y_mm, z_mm in points:
                     data.append([
