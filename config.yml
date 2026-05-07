@@ -1,4 +1,0 @@
-cvp.app.knime.bim: # {group_id}.{name} from the knime.yml
-  src: C:/Users/v.palazzolo/Documents/GitHub/01_CVP/CVP.App.Knime.BIM/knime_extension # Path to folder containing the extension files
-  conda_env_path:  C:/Users/v.palazzolo/AppData/Local/Programs/KNIME/bundling/envs/org_knime_pythonscripting # Path to the Python environment to use
-  debug_mode: true # Optional line, if set to true, it will always use the latest changes of execute/configure, when that method is used within the KNIME Analytics Platform

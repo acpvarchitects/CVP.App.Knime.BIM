@@ -15,9 +15,9 @@ category = knext.category(
 )
 
 # The different node files
-import nodes.ifc_building_info
-import nodes.ifc_reader
-import nodes.ifc_intersection
-import nodes.ifc_extract_centroids 
-import nodes.ifc_extract_room_points
-import nodes.ifc_door_offset_points
+from nodes import ifc_building_info
+from nodes import ifc_reader
+from nodes import ifc_intersection
+from nodes import ifc_extract_centroids
+from nodes import ifc_extract_room_points
+from nodes import ifc_connection_points
