@@ -1,8 +1,7 @@
 import knime_extension as knext
 import ifcopenshell
-from ifcopenshell.util import element, classification, placement
+import ifcopenshell.util.unit
 import ifcopenshell.geom
-import ifcopenshell.util.shape
 import pandas as pd
 import numpy as np
 import os
@@ -14,27 +13,24 @@ from OCC.Core.Bnd import Bnd_Box
 from OCC.Core.gp import gp_Pnt
 from OCC.Core.BRepBndLib import brepbndlib
 
-# Node development reference links:
-# https://www.knime.com/blog/4-steps-for-your-python-team-to-develop-knime-nodes
-# https://www.knime.com/blog/python-script-node-bundled-packages
-# https://docs.knime.com/latest/pure_python_node_extensions_guide/index.html#_defining_custom_port_objects
-
 
 @knext.node(
     name="IFC Room Points",
-    node_type=knext.NodeType.SOURCE,
+    node_type=knext.NodeType.MANIPULATOR,
     icon_path="icons/ifc.png",
     category=category,
     after="",
 )
 @knext.input_table(name="Rooms IFC File", description="Table containing paths to the IFC file with rooms")
 @knext.output_table(name="Room Points Table", description="Points inside room volumes with metadata")
-
-
 class ExtractRoomVolumePoints:
     """
-    Extracts interior points within each room in an IFC file using OpenCascade geometry,
-    returning a 3D point cloud with room metadata.
+    Extracts interior points within each IfcSpace volume using OpenCascade geometry.
+    Coordinates are always output in millimeters regardless of IFC model units.
+
+    The buffer zone (minimum offset from room surfaces) is enforced geometrically
+    via the OCC solid classifier tolerance, not via bounding-box shrinkage, so it
+    works correctly for rotated or non-rectangular rooms.
     """
 
     path_column = knext.ColumnParameter(
@@ -45,31 +41,50 @@ class ExtractRoomVolumePoints:
 
     spacing = knext.DoubleParameter(
         "Grid Spacing [mm]",
-        "Spacing between points in the X/Y/Z grid",
+        "Spacing between grid points along each axis",
         default_value=300,
     )
 
     min_offset_mm = knext.IntParameter(
         "Minimum Offset from Boundary [mm]",
-        "Minimum distance from room surfaces to keep points (buffer zone)",
+        "Points closer than this distance to any room surface are discarded. "
+        "Enforced via OCC classifier tolerance — geometrically correct for any room shape.",
         default_value=100,
     )
 
-    def get_storey_elevation(self, space, ifc_file):
-        for rel in ifc_file.by_type("IfcRelAggregates"):
-            if space in rel.RelatedObjects:
-                storey = rel.RelatingObject
-                if storey.is_a("IfcBuildingStorey"):
-                    elevation = getattr(storey, 'Elevation', 0.0)
-                    return elevation, getattr(storey, 'Name', 'Unknown')
-        return 0.0, "Unknown"
+    def _get_storey(self, space):
+        """
+        Returns (storey_name, elevation_raw_model_units, storey_global_id).
+        Checks Decomposes (IFC4 pattern) then ContainedInStructure (IFC2x3 pattern).
+        """
+        for rel in getattr(space, "Decomposes", []):
+            s = rel.RelatingObject
+            if s.is_a("IfcBuildingStorey"):
+                elev = getattr(s, "Elevation", None)
+                return getattr(s, "Name", None), (float(elev) if elev is not None else None), s.GlobalId
+        for rel in getattr(space, "ContainedInStructure", []):
+            s = rel.RelatingStructure
+            if s.is_a("IfcBuildingStorey"):
+                elev = getattr(s, "Elevation", None)
+                return getattr(s, "Name", None), (float(elev) if elev is not None else None), s.GlobalId
+        return None, None, None
 
-    def get_shape_geometry(self, space, spacing, min_offset):
+    def _get_interior_points(self, space, spacing_mm, min_offset_mm, scale_to_mm):
+        """
+        Generates a 3D grid inside the space BRep and returns points that are
+        at least min_offset_mm from any room surface.
+
+        All internal geometry is in model units; output coordinates are in mm.
+        The buffer is enforced by the OCC classifier tolerance, not by AABB shrinkage,
+        so it is correct for rotated and non-rectangular rooms.
+        """
         settings = ifcopenshell.geom.settings()
         settings.set("USE_WORLD_COORDS", True)
         settings.set("USE_PYTHON_OPENCASCADE", True)
 
-        extracted_points = []
+        # Convert mm parameters to model units
+        spacing_model = spacing_mm / scale_to_mm
+        min_offset_model = min_offset_mm / scale_to_mm
 
         try:
             shape = ifcopenshell.geom.create_shape(settings, space)
@@ -81,35 +96,31 @@ class ExtractRoomVolumePoints:
 
             classifier = BRepClass3d_SolidClassifier(brep_shape)
 
-            x_coords = np.arange(xmin, xmax, spacing)
-            y_coords = np.arange(ymin, ymax, spacing)
+            x_coords = np.arange(xmin, xmax, spacing_model)
+            y_coords = np.arange(ymin, ymax, spacing_model)
+            z_coords = np.arange(zmin + spacing_model, zmax, spacing_model)
 
+            # Small z offset for the XY pre-check — well inside the room, near the floor
+            floor_z = zmin + spacing_model * 0.1
+
+            points = []
             for x in x_coords:
                 for y in y_coords:
-                    floor_point = gp_Pnt(x, y, zmin + 0.01)
-                    classifier.Perform(floor_point, 1e-6)
+                    # Pre-check: skip XY columns outside the room footprint (fast path)
+                    classifier.Perform(gp_Pnt(x, y, floor_z), 1e-9)
                     if classifier.State() != TopAbs_IN:
                         continue
-
-                    z_coords = np.arange(zmin + spacing, zmax, spacing)
                     for z in z_coords:
-                        point = gp_Pnt(x, y, z)
-                        classifier.Perform(point, 1e-6)
+                        # Geometric buffer enforced via classifier tolerance:
+                        # TopAbs_IN only if point is > min_offset_model from any surface
+                        classifier.Perform(gp_Pnt(x, y, z), min_offset_model)
                         if classifier.State() == TopAbs_IN:
-                            extracted_points.append((x, y, z))
+                            points.append((x * scale_to_mm, y * scale_to_mm, z * scale_to_mm))
 
-            # Buffer zone
-            offset_m = min_offset / 1000.0
-            filtered_points = [
-                (x, y, z) for x, y, z in extracted_points
-                if (x > xmin + offset_m and x < xmax - offset_m and
-                    y > ymin + offset_m and y < ymax - offset_m and
-                    z > zmin + offset_m and z < zmax - offset_m)
-            ]
-
-            return filtered_points
+            return points
 
         except Exception as e:
+            print(f"[WARN] Could not process space {getattr(space, 'GlobalId', '?')}: {e}")
             return []
 
     def configure(self, configure_context, input_schema_1):
@@ -127,22 +138,41 @@ class ExtractRoomVolumePoints:
             raise ValueError(f"File not found: {ifc_path}")
 
         ifc_file = ifcopenshell.open(ifc_path)
+
+        scale_to_m = ifcopenshell.util.unit.calculate_unit_scale(ifc_file)
+        scale_to_mm = scale_to_m * 1000.0
+        print(f"[INFO] IFC unit scale -> mm: {scale_to_mm}")
+
         spaces = ifc_file.by_type("IfcSpace")
+        print(f"[INFO] Spaces to process: {len(spaces)}")
 
         data = []
 
         for space in spaces:
             try:
-                elevation, level_name = self.get_storey_elevation(space, ifc_file)
-                long_name = getattr(space, "LongName", "Unknown")
+                storey_name, storey_elev_raw, storey_gid = self._get_storey(space)
+                storey_elev_mm = storey_elev_raw * scale_to_mm if storey_elev_raw is not None else None
+                long_name = getattr(space, "LongName", None)
 
-                spacing_m = self.spacing / 1000.0
-                points = self.get_shape_geometry(space,spacing_m, self.min_offset_mm)
+                points = self._get_interior_points(space, self.spacing, self.min_offset_mm, scale_to_mm)
+                print(f"[INFO] Space {getattr(space, 'GlobalId', '?')} ({long_name}): {len(points)} points")
 
-                for x, y, z in points:
-                    data.append([x * 1000, y * 1000, z * 1000, space.GlobalId, level_name, long_name])
-            except Exception:
+                for x_mm, y_mm, z_mm in points:
+                    data.append([
+                        x_mm, y_mm, z_mm,
+                        space.GlobalId,
+                        storey_name,
+                        storey_elev_mm,
+                        storey_gid,
+                        long_name,
+                    ])
+
+            except Exception as e:
+                print(f"[WARN] Error processing space {getattr(space, 'GlobalId', '?')}: {e}")
                 continue
 
-        result_df = pd.DataFrame(data, columns=["X", "Y", "Z", "GlobalID", "Level", "LongName"])
+        result_df = pd.DataFrame(
+            data,
+            columns=["X", "Y", "Z", "GlobalID", "Level", "StoreyElevation", "StoreyGlobalId", "LongName"],
+        )
         return knext.Table.from_pandas(result_df)
